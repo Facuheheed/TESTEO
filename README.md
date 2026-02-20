@@ -2,25 +2,28 @@
 
 Base de editor de vídeo automatizado orientado a flujo **IA + edición + export**.
 
+## Estado de tus referencias (aplicación real)
+
+Sí: **las apliqué parcialmente en esta base**. Quedó implementado lo que corresponde al núcleo de procesamiento en este repo, y dejé declarado lo que todavía pertenece a fases de producto/web.
+
+| Referencia | Estado en este repo |
+|---|---|
+| Recorte automático de silencios | ✅ Implementado |
+| Onda de audio dinámica para timeline | ✅ Implementado (JSON `[{t, amp}]`) |
+| Sugerencia de candidatos de clip | ✅ Implementado (a partir de segmentos de voz) |
+| Perfil de pipeline IA (transcripción/traducción/escenas) | ✅ Implementado como flags y contrato de análisis |
+| Frontend Next.js + React + timeline visual | ⏳ No en este repo (pendiente fase web) |
+| Backend Flask modular completo | ⏳ No en este repo (pendiente fase API/server) |
+
 ## Qué incluye esta versión
 
 - Recorte inteligente de silencios con FFmpeg (`silencedetect`).
 - Construcción de segmentos útiles con padding y control de micro-cortes.
 - Render final concatenado automáticamente.
 - Export de reporte JSON con silencios/segmentos.
-- **Extracción dinámica de onda de audio** para timeline (JSON normalizado).
-- Pruebas unitarias de segmentación y waveform.
-
-## Dirección de producto (alineado a tu visión)
-
-- Editor web moderno (UI cuidada, timeline detallado, interacción natural).
-- Pipeline híbrido:
-  - ingestión media,
-  - análisis audio (silencios + waveform),
-  - transcripción/traducción,
-  - edición asistida por IA,
-  - export en cola.
-- API pensada para agentes (automatización por lenguaje natural sobre herramientas del editor).
+- Extracción dinámica de onda de audio para timeline (JSON normalizado).
+- Resumen de pipeline para automatización por agentes.
+- Candidatos de clip derivados de segmentos de voz.
 
 ## CLI actual
 
@@ -30,6 +33,11 @@ PYTHONPATH=src python -m dotcut.cli INPUT.mp4 OUTPUT.mp4 \
   --min-silence 0.45 \
   --padding 0.18 \
   --min-keep 0.20 \
+  --waveform-json waveform.json \
+  --analysis-json analysis.json \
+  --enable-transcription \
+  --enable-translation \
+  --enable-scene-candidates \
   --report report.json
 ```
 
@@ -42,10 +50,6 @@ PYTHONPATH=src python -m dotcut.cli INPUT.mp4 \
   --waveform-points 1600 \
   --waveform-sample-rate 12000
 ```
-
-El `waveform.json` contiene `[{t, amp}]` para dibujar onda en timeline estable a cualquier zoom.
-
----
 
 ## ¿Cómo lo pruebo?
 
@@ -61,12 +65,16 @@ PYTHONPATH=src python -m pytest
 PYTHONPATH=src python -m dotcut.cli --help
 ```
 
-### 3) Smoke test de waveform (requiere ffmpeg instalado)
+### 3) Smoke test completo (si tienes ffmpeg instalado)
 
 ```bash
-PYTHONPATH=src python -m dotcut.cli sample.mp4 \
-  --only-waveform \
-  --waveform-json sample_waveform.json
+PYTHONPATH=src python -m dotcut.cli sample.mp4 sample_out.mp4 \
+  --waveform-json sample_waveform.json \
+  --analysis-json sample_analysis.json \
+  --enable-transcription \
+  --enable-translation \
+  --enable-scene-candidates \
+  --report sample_report.json
 ```
 
 ## Requisitos
@@ -76,7 +84,7 @@ PYTHONPATH=src python -m dotcut.cli sample.mp4 \
 
 ## Próximos pasos recomendados
 
-1. Endpoint backend `/media/{id}/waveform` para precomputar y cachear onda.
-2. Cache multi-resolución (ej: 400 / 1600 / 6400 puntos) para zoom fluido.
-3. Subtítulos automáticos + corte por transcripción.
-4. Cola de renders/export y auditoría por job.
+1. Montar backend Flask con endpoint `/media/{id}/analysis` y `/media/{id}/waveform`.
+2. Cache multi-resolución de waveform (400 / 1600 / 6400 puntos) para zoom estable.
+3. Integrar Whisper/traducción real detrás de los flags del pipeline.
+4. Crear frontend Next.js timeline que consuma `waveform.json` + `analysis.json`.
