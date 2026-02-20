@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 from dotcut.silence import Segment
+from dotcut.waveform import bucket_peaks, build_wave_points, decode_f32le_mono, normalize_samples
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,33 @@ def detect_silence(input_file: Path, *, noise_threshold: str, min_silence: float
     ]
     proc = subprocess.run(cmd, text=True, capture_output=True)
     return f"{proc.stdout}\n{proc.stderr}"
+
+
+def extract_waveform(input_file: Path, *, sample_rate: int, points: int, duration: float) -> list[dict[str, float]]:
+    """Extrae una envolvente de onda normalizada para pintar en timeline."""
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-i",
+        str(input_file),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        str(sample_rate),
+        "-f",
+        "f32le",
+        "-",
+    ]
+    proc = subprocess.run(cmd, capture_output=True)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.decode("utf-8", errors="ignore") or "falló extracción de onda")
+
+    samples = decode_f32le_mono(proc.stdout)
+    normalized = normalize_samples(samples)
+    peaks = bucket_peaks(normalized, bucket_count=points)
+    points_data = build_wave_points(peaks, duration=duration)
+    return [{"t": p.t, "amp": p.amp} for p in points_data]
 
 
 def concat_segments(input_file: Path, output_file: Path, segments: list[Segment]) -> None:

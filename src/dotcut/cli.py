@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from dotcut.ffmpeg_ops import concat_segments, detect_silence, probe_duration
+from dotcut.ffmpeg_ops import concat_segments, detect_silence, extract_waveform, probe_duration
 from dotcut.silence import build_keep_segments, merge_adjacent, parse_silence_events
 
 
@@ -14,25 +14,60 @@ def parse_args() -> argparse.Namespace:
         description="Recorta silencios automáticamente y exporta un vídeo continuo.",
     )
     parser.add_argument("input", type=Path, help="Archivo de entrada")
-    parser.add_argument("output", type=Path, help="Archivo de salida")
+    parser.add_argument("output", type=Path, nargs="?", help="Archivo de salida (opcional con --only-waveform)")
     parser.add_argument("--noise-threshold", default="-32dB", help="Umbral de ruido para silencedetect")
     parser.add_argument("--min-silence", type=float, default=0.45, help="Duración mínima (s) para considerar silencio")
     parser.add_argument("--padding", type=float, default=0.18, help="Padding (s) alrededor de silencios")
     parser.add_argument("--min-keep", type=float, default=0.20, help="Duración mínima de segmento a mantener")
     parser.add_argument("--join-gap", type=float, default=0.08, help="Une segmentos con huecos menores a este valor")
     parser.add_argument("--report", type=Path, help="Ruta opcional para escribir reporte JSON")
+    parser.add_argument("--waveform-json", type=Path, help="Exporta forma de onda normalizada para timeline")
+    parser.add_argument("--waveform-points", type=int, default=1200, help="Cantidad de puntos de onda a generar")
+    parser.add_argument("--waveform-sample-rate", type=int, default=12000, help="Sample rate para extraer onda")
+    parser.add_argument("--only-waveform", action="store_true", help="Solo genera waveform JSON y no renderiza video")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     input_file: Path = args.input
-    output_file: Path = args.output
 
     if not input_file.exists():
         raise SystemExit(f"No existe el archivo de entrada: {input_file}")
 
     probe = probe_duration(input_file)
+
+    if args.waveform_json:
+        waveform = extract_waveform(
+            input_file,
+            sample_rate=max(1000, args.waveform_sample_rate),
+            points=max(50, args.waveform_points),
+            duration=probe.duration,
+        )
+        args.waveform_json.write_text(
+            json.dumps(
+                {
+                    "input": str(input_file),
+                    "duration": probe.duration,
+                    "points": len(waveform),
+                    "waveform": waveform,
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+    if args.only_waveform:
+        print("✅ Waveform generada.")
+        if args.waveform_json:
+            print(f"🟣 JSON: {args.waveform_json}")
+        return
+
+    if not args.output:
+        raise SystemExit("Debes indicar output para render, o usar --only-waveform")
+
+    output_file: Path = args.output
     ffmpeg_log = detect_silence(
         input_file,
         noise_threshold=args.noise_threshold,
@@ -57,6 +92,7 @@ def main() -> None:
             "duration": probe.duration,
             "silences": [{"start": s.start, "end": s.end} for s in silences],
             "segments": [{"start": s.start, "end": s.end, "duration": s.duration} for s in keep],
+            "waveform_json": str(args.waveform_json) if args.waveform_json else None,
         }
         args.report.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -67,6 +103,8 @@ def main() -> None:
     print(f"⏱️ Duración original: {total_before:.2f}s")
     print(f"✂️ Duración final: {total_after:.2f}s")
     print(f"📉 Tiempo recortado: {reduction:.2f}s")
+    if args.waveform_json:
+        print(f"🟣 Waveform JSON: {args.waveform_json}")
 
 
 if __name__ == "__main__":

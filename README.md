@@ -1,34 +1,31 @@
-# DotCut Studio (MVP)
+# DotCut Studio (MVP+)
 
-Primera iteración de un editor de vídeo automatizado enfocado en **recorte inteligente de silencios** y flujo de exportación reproducible.
+Base de editor de vídeo automatizado orientado a flujo **IA + edición + export**.
 
 ## Qué incluye esta versión
 
-- Detección de silencios con FFmpeg (`silencedetect`).
-- Generación de segmentos hablados con padding configurable.
+- Recorte inteligente de silencios con FFmpeg (`silencedetect`).
+- Construcción de segmentos útiles con padding y control de micro-cortes.
 - Render final concatenado automáticamente.
-- Export opcional de metadatos JSON para inspección.
-- Pruebas unitarias para la lógica crítica de segmentación.
+- Export de reporte JSON con silencios/segmentos.
+- **Extracción dinámica de onda de audio** para timeline (JSON normalizado).
+- Pruebas unitarias de segmentación y waveform.
 
-## Requisitos
+## Dirección de producto (alineado a tu visión)
 
-- Python 3.11+
-- FFmpeg instalado y disponible en `PATH`
+- Editor web moderno (UI cuidada, timeline detallado, interacción natural).
+- Pipeline híbrido:
+  - ingestión media,
+  - análisis audio (silencios + waveform),
+  - transcripción/traducción,
+  - edición asistida por IA,
+  - export en cola.
+- API pensada para agentes (automatización por lenguaje natural sobre herramientas del editor).
 
-## Instalación
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .[dev]
-```
-
-> Si `pip install -e .[dev]` falla por red/proxy, puedes ejecutar igualmente el proyecto en modo local con `PYTHONPATH=src`.
-
-## Uso rápido
+## CLI actual
 
 ```bash
-dotcut input.mp4 output.mp4 \
+PYTHONPATH=src python -m dotcut.cli INPUT.mp4 OUTPUT.mp4 \
   --noise-threshold -32dB \
   --min-silence 0.45 \
   --padding 0.18 \
@@ -36,69 +33,50 @@ dotcut input.mp4 output.mp4 \
   --report report.json
 ```
 
-Esto:
-1. detecta silencios,
-2. construye segmentos no silenciosos,
-3. concatena los segmentos en `output.mp4`.
+### Extraer solo waveform (sin render)
+
+```bash
+PYTHONPATH=src python -m dotcut.cli INPUT.mp4 \
+  --only-waveform \
+  --waveform-json waveform.json \
+  --waveform-points 1600 \
+  --waveform-sample-rate 12000
+```
+
+El `waveform.json` contiene `[{t, amp}]` para dibujar onda en timeline estable a cualquier zoom.
 
 ---
 
-## ¿Cómo lo pruebo? (paso a paso)
+## ¿Cómo lo pruebo?
 
-### 1) Verifica que FFmpeg existe
-
-```bash
-ffmpeg -version
-ffprobe -version
-```
-
-### 2) Ejecuta los tests unitarios
+### 1) Tests unitarios
 
 ```bash
 PYTHONPATH=src python -m pytest
 ```
 
-Deberías ver algo como `4 passed`.
-
-### 3) Genera un video de prueba con silencios (sin descargar nada)
+### 2) Ayuda de CLI
 
 ```bash
-ffmpeg -hide_banner -y \
-  -f lavfi -i color=c=black:s=1280x720:d=8 \
-  -f lavfi -i "sine=frequency=1000:duration=2" \
-  -f lavfi -i "anullsrc=r=48000:cl=stereo:d=2" \
-  -f lavfi -i "sine=frequency=700:duration=2" \
-  -f lavfi -i "anullsrc=r=48000:cl=stereo:d=2" \
-  -filter_complex "[1:a][2:a][3:a][4:a]concat=n=4:v=0:a=1[a]" \
-  -map 0:v -map "[a]" -shortest sample_input.mp4
+PYTHONPATH=src python -m dotcut.cli --help
 ```
 
-Este archivo tiene tono + silencio + tono + silencio, ideal para validar recorte automático.
-
-### 4) Corre DotCut sobre ese video
+### 3) Smoke test de waveform (requiere ffmpeg instalado)
 
 ```bash
-PYTHONPATH=src python -m dotcut.cli sample_input.mp4 sample_output.mp4 \
-  --noise-threshold -35dB \
-  --min-silence 0.30 \
-  --padding 0.10 \
-  --min-keep 0.15 \
-  --report sample_report.json
+PYTHONPATH=src python -m dotcut.cli sample.mp4 \
+  --only-waveform \
+  --waveform-json sample_waveform.json
 ```
 
-### 5) Comprueba que realmente recortó
+## Requisitos
 
-```bash
-ffprobe -v error -show_entries format=duration -of default=nk=1:nw=1 sample_input.mp4
-ffprobe -v error -show_entries format=duration -of default=nk=1:nw=1 sample_output.mp4
-cat sample_report.json
-```
+- Python 3.11+
+- FFmpeg y FFprobe en `PATH`
 
-Si todo está bien:
-- `sample_output.mp4` debería durar menos que `sample_input.mp4`.
-- `sample_report.json` mostrará los silencios detectados y segmentos conservados.
+## Próximos pasos recomendados
 
-## Notas
-
-- Es un MVP de base para seguir creciendo hacia una app completa (timeline, subtítulos, presets, cola de renders, etc.).
-- Si no se detectan silencios, se mantiene el vídeo original completo.
+1. Endpoint backend `/media/{id}/waveform` para precomputar y cachear onda.
+2. Cache multi-resolución (ej: 400 / 1600 / 6400 puntos) para zoom fluido.
+3. Subtítulos automáticos + corte por transcripción.
+4. Cola de renders/export y auditoría por job.
